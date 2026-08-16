@@ -24,5 +24,21 @@
       "patch": "./cordis.patch.yml"
     }
   },
-  "packageManager": "pnpm@11.7.0"
+  "packageManager": "pnpm@11.7.0",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "auth",
+    "authentication",
+    "authorization",
+    "multi-tenant",
+    "postgresql",
+    "user-management",
+    "login",
+    "workspace-isolation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kangshifu1/dsh-accounts.git"
+  }
 }

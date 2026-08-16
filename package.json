@@ -1,6 +1,6 @@
 {
   "name": "dsh-accounts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH 多租户账户与授权插件：PostgreSQL 存储 + admin 管理 API + 每账户独立工作目录（独立插件，不改 DSH 核心）",
   "type": "module",
   "main": "./lib/index.js",

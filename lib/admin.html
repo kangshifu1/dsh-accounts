@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户管理 · DSH</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#f3f4f6;color:#1f2937;min-height:100vh}
+.wrap{max-width:1080px;margin:0 auto;padding:2rem 1.5rem}
+h1{font-size:1.4rem;margin-bottom:1rem;color:#111827}
+.toolbar{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin-bottom:1.1rem}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:.55rem .95rem;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#111827;font-size:.9rem;font-weight:600;text-decoration:none;cursor:pointer}
+.btn:hover{background:#f9fafb}
+.btn.primary{background:#0f3460;border-color:#0f3460;color:#fff}
+.btn.primary:hover{background:#16213e}
+.msg{padding:.7rem .9rem;border-radius:8px;margin-bottom:1rem;font-size:.9rem}
+.msg.ok{background:#ecfdf5;color:#059669;border:1px solid #a7f3d0}
+.msg.err{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+th,td{padding:.7rem .85rem;text-align:left;font-size:.9rem;border-bottom:1px solid #f0f0f0}
+th{background:#fafafa;color:#6b7280;font-weight:600;font-size:.8rem}
+tr:last-child td{border-bottom:none}
+.dir{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem;color:#6b7280;word-break:break-all}
+.badge{display:inline-block;padding:.18rem .55rem;border-radius:999px;font-size:.75rem;font-weight:600}
+.badge.on{background:#ecfdf5;color:#059669}
+.badge.off{background:#f3f4f6;color:#9ca3af}
+.actions{display:flex;gap:.4rem;flex-wrap:wrap}
+.actions button{font-size:.8rem;padding:.32rem .6rem;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer}
+.actions button:hover{background:#f9fafb}
+.actions button.danger{color:#b91c1c;border-color:#fecaca}
+.mask{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;z-index:50}
+.mask[hidden]{display:none}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:440px;padding:1.4rem;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+.modal-head span{font-size:1.05rem;font-weight:700;color:#111827}
+.x{background:none;border:none;font-size:1.4rem;color:#9ca3af;cursor:pointer;line-height:1}
+.field{margin-bottom:.85rem}
+label{display:block;font-size:.82rem;color:#555;font-weight:600;margin-bottom:.3rem}
+input,select{width:100%;padding:.55rem .7rem;border:2px solid #e5e7eb;border-radius:8px;font-size:.9rem}
+input:focus,select:focus{outline:none;border-color:#0f3460}
+.hint{font-size:.78rem;color:#9ca3af;margin-top:.25rem}
+.modal-foot{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.1rem}
+.empty{text-align:center;color:#9ca3af;padding:2rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>用户管理</h1>
+<div class="toolbar">
+<button class="btn primary" id="addBtn">+ 新增用户</button>
+<a class="btn" href="/">返回主页</a>
+<a class="btn" href="/api/auth/logout">退出登录</a>
+</div>
+<div id="msg" class="msg" hidden></div>
+<table>
+<thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>工作目录</th><th style="width:340px">操作</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+
+<div id="mask" class="mask" hidden>
+<div class="modal">
+<div class="modal-head"><span id="modalTitle"></span><button class="x" id="modalClose">×</button></div>
+<div id="modalBody"></div>
+</div>
+</div>
+
+<script>
+(function(){
+var API = "/api/accounts";
+var me = null;
+var rows = document.getElementById("rows");
+var msg = document.getElementById("msg");
+var mask = document.getElementById("mask");
+var modalTitle = document.getElementById("modalTitle");
+var modalBody = document.getElementById("modalBody");
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function showMsg(text, ok){ msg.textContent = text; msg.hidden = false; msg.className = "msg " + (ok ? "ok" : "err"); }
+
+function api(path, options){
+  var opts = options || {};
+  var init = { method: opts.method || "GET", credentials: "same-origin", headers: {} };
+  if (opts.body !== undefined){ init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(opts.body); }
+  return fetch(path, init).then(function(r){
+    return r.json().then(function(j){ return { status: r.status, body: j }; });
+  }).catch(function(e){ return { status: 0, body: { error: String(e) } }; });
+}
+
+function openModal(title, bodyHtml, onSubmit){
+  modalTitle.textContent = title;
+  modalBody.innerHTML = bodyHtml;
+  mask.hidden = false;
+  var form = modalBody.querySelector("form");
+  form.addEventListener("submit", function(ev){
+    ev.preventDefault();
+    onSubmit(new FormData(form)).then(function(ok){ if (ok) closeModal(); });
+  });
+}
+function closeModal(){ mask.hidden = true; modalBody.innerHTML = ""; }
+document.getElementById("modalClose").addEventListener("click", closeModal);
+mask.addEventListener("click", function(ev){ if (ev.target === mask) closeModal(); });
+document.addEventListener("click", function(ev){ if (ev.target.closest && ev.target.closest(".cancel-btn")) closeModal(); });
+
+function load(){
+  api(API).then(function(r){
+    if (r.status === 401){ location.href = "/login"; return; }
+    if (r.status === 403){ showMsg("需要 admin 权限", false); return; }
+    if (r.status !== 200){ showMsg("加载失败: " + (r.body.error || r.status), false); return; }
+    me = r.body.me;
+    render(r.body.accounts || []);
+  });
+}
+
+function render(list){
+  if (list.length === 0){ rows.innerHTML = "<tr><td colspan='5' class='empty'>暂无用户</td></tr>"; return; }
+  var html = "";
+  list.forEach(function(u){
+    var off = !!u.disabled;
+    html += "<tr>";
+    html += "<td><b>" + esc(u.username) + "</b>" + (u.username === me ? " <span class='badge on'>当前</span>" : "") + "</td>";
+    html += "<td>" + esc(u.role) + "</td>";
+    html += "<td><span class='badge " + (off ? "off" : "on") + "'>" + (off ? "已禁用" : "启用") + "</span></td>";
+    html += "<td class='dir'>" + esc(u.workspace) + "</td>";
+    html += "<td class='actions'>";
+    html += "<button data-act='edit' data-u='" + esc(u.username) + "'>编辑</button>";
+    html += "<button data-act='reset' data-u='" + esc(u.username) + "'>重置密码</button>";
+    html += "<button data-act='toggle' data-u='" + esc(u.username) + "'>" + (off ? "启用" : "禁用") + "</button>";
+    if (u.username !== me) html += "<button data-act='del' data-u='" + esc(u.username) + "' class='danger'>删除</button>";
+    html += "</td></tr>";
+  });
+  rows.innerHTML = html;
+}
+
+rows.addEventListener("click", function(ev){
+  var btn = ev.target.closest("button[data-act]");
+  if (!btn) return;
+  var u = btn.getAttribute("data-u");
+  var act = btn.getAttribute("data-act");
+  if (act === "edit") editUser(u);
+  else if (act === "reset") resetUser(u);
+  else if (act === "toggle") toggleUser(u);
+  else if (act === "del") delUser(u);
+});
+
+document.getElementById("addBtn").addEventListener("click", function(){
+  openModal("新增用户",
+    "<form><div class='field'><label>用户名</label><input name='username' required pattern='[a-zA-Z0-9_.-]{1,64}'></div>" +
+    "<div class='field'><label>初始密码</label><input name='password' type='password' required minlength='6'><div class='hint'>至少 6 位</div></div>" +
+    "<div class='field'><label>角色</label><select name='role'><option value='user'>user</option><option value='admin'>admin</option></select></div>" +
+    "<div class='field'><label>工作目录（可选）</label><input name='workspace' placeholder='留空则用用户名子目录'></div>" +
+    "<div class='modal-foot'><button type='button' class='btn cancel-btn'>取消</button><button class='btn primary'>创建</button></div></form>",
+    function(fd){
+      return api(API, { method: "POST", body: {
+        username: fd.get("username"), password: fd.get("password"), role: fd.get("role"), workspace: fd.get("workspace") || ""
+      }}).then(function(r){
+        if (r.status === 201){ showMsg("已创建用户 " + fd.get("username"), true); load(); return true; }
+        showMsg("创建失败: " + (r.body.error || r.status), false); return false;
+      });
+    });
+});
+
+function editUser(u){
+  openModal("编辑用户 " + u,
+    "<form><div class='field'><label>角色</label><select name='role' id='roleSel'><option value='user'>user</option><option value='admin'>admin</option></select></div>" +
+    "<div class='field'><label>工作目录</label><input name='workspace' id='wsIn'></div>" +
+    "<div class='modal-foot'><button type='button' class='btn cancel-btn'>取消</button><button class='btn primary'>保存</button></div></form>",
+    function(fd){
+      return api(API + "/" + encodeURIComponent(u), { method: "PUT", body: {
+        role: fd.get("role"), workspace: fd.get("workspace")
+      }}).then(function(r){
+        if (r.status === 200){ showMsg("已更新 " + u, true); load(); return true; }
+        showMsg("更新失败: " + (r.body.error || r.status), false); return false;
+      });
+    });
+  api(API).then(function(r){
+    var list = (r.body && r.body.accounts) || [];
+    var cur = list.filter(function(x){ return x.username === u; })[0];
+    if (cur){ document.getElementById("roleSel").value = cur.role; document.getElementById("wsIn").value = cur.workspace; }
+  });
+}
+
+function resetUser(u){
+  openModal("重置密码 " + u,
+    "<form><div class='field'><label>新密码</label><input name='password' type='password' required minlength='6'><div class='hint'>至少 6 位</div></div>" +
+    "<div class='modal-foot'><button type='button' class='btn cancel-btn'>取消</button><button class='btn primary'>重置</button></div></form>",
+    function(fd){
+      return api(API + "/" + encodeURIComponent(u), { method: "PUT", body: { password: fd.get("password") }}).then(function(r){
+        if (r.status === 200){ showMsg("已重置 " + u + " 的密码", true); return true; }
+        showMsg("重置失败: " + (r.body.error || r.status), false); return false;
+      });
+    });
+}
+
+function toggleUser(u){
+  api(API).then(function(r){
+    var list = (r.body && r.body.accounts) || [];
+    var cur = list.filter(function(x){ return x.username === u; })[0];
+    if (!cur) return;
+    var next = !cur.disabled;
+    return api(API + "/" + encodeURIComponent(u), { method: "PUT", body: { disabled: next }}).then(function(r2){
+      if (r2.status === 200){ showMsg(u + " 已" + (next ? "禁用" : "启用"), true); load(); }
+      else showMsg("操作失败: " + (r2.body.error || r2.status), false);
+    });
+  });
+}
+
+function delUser(u){
+  if (!confirm("确定删除用户 " + u + " 吗？该操作不可恢复。")) return;
+  api(API + "/" + encodeURIComponent(u), { method: "DELETE" }).then(function(r){
+    if (r.status === 200){ showMsg("已删除 " + u, true); load(); }
+    else showMsg("删除失败: " + (r.body.error || r.status), false);
+  });
+}
+
+load();
+})();
+</script>
+</body>
+</html>

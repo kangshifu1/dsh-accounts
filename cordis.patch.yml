@@ -1,0 +1,4 @@
+# dsh-accounts bundle patch —— 安装时自动成为配置层。
+- insert:
+    - id: dsh-accounts
+      name: "dsh-accounts"
